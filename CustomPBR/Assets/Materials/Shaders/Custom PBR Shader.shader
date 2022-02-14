@@ -10,7 +10,6 @@ Shader "Unlit/Custom PBR Shader"
         _Roughness ("Roughness", float) = 0
         _AOTex ("Ambient Occlusion Texture", 2D) = "white" {}
         _AmbientOcclusion ("Ambient Occlusion", float) = 1
-        //_LightPos ("LightDirection", vector) = (0,0,0,0)
         _LightColor ("LightColor", Color) = (1,1,1,1)
     }
     SubShader
@@ -41,7 +40,7 @@ Shader "Unlit/Custom PBR Shader"
 
             struct v2f
             {
-                UNITY_FOG_COORDS(1)
+                UNITY_FOG_COORDS(2)
                 float4 vertex : SV_POSITION;
                 float3 normal : TEXCOORD1;
                 float2 uv : TEXCOORD0;
@@ -55,7 +54,6 @@ Shader "Unlit/Custom PBR Shader"
             float _Roughness;
             sampler2D _AOTex;
             float _AmbientOcclusion;
-            float4 _LightDirection;
             float4 _LightColor;
 
 
@@ -80,28 +78,24 @@ Shader "Unlit/Custom PBR Shader"
                 float distAtten, shadowAtten;*/
                 //CalculateMainLight(i.vertex, direction, lightColor, distAtten, shadowAtten);
                 float3 N = normalize(i.normal);
-                float3 V = normalize(_WorldSpaceCameraPos - i.vertex);
+                float3 V = normalize(UnityWorldSpaceViewDir(i.vertex));
 
-                _Albedo *=  tex2D(_AlbedoTex, i.uv);
-                _Metallic *= tex2D(_MetallicTex, i.uv);
-                _Roughness *= tex2D(_RoughnessTex, i.uv);
-                _AmbientOcclusion *= tex2D(_AOTex, i.uv);
+                _Albedo *=  pow(tex2D(_AlbedoTex, i.uv), 2.2);
+                _Metallic *= tex2D(_MetallicTex, i.uv).r;
+                //_Roughness *= tex2D(_RoughnessTex, i.uv);
+                _AmbientOcclusion *= tex2D(_AOTex, i.uv).r;
 
-                float3 F0 = 0.04;
+                float3 F0 = 0.08;
                 F0 = lerp(F0, _Albedo, _Metallic);
 
                 // reflectance equation
                 float3 Lo = 0.0;
-                //for (int index = 0; index < 4; ++index)
                 {
                     // calculate per-light radiance
-                    //float3 L = normalize(lightPositions[index] - i.vertex);
-                    float3 L = normalize(_LightDirection);
+                    float3 L = normalize(UnityWorldSpaceLightDir(i.vertex));
                     float3 H = normalize(V + L);
-                    //float distance = length(lightPositions[index] - i.vertex);
-                    float distance = length(_WorldSpaceLightPos0 - i.vertex);
-                    float attenuation = 1.0 / (distance * distance);
-                    float3 radiance = _LightColor * attenuation;
+                    //float distance = length(_WorldSpaceLightPos0 - i.vertex);
+                    //float3 radiance = _LightColor * attenuation;
 
                     // cook-torrance brdf
                     float NDF = DistributionGGX(N, H, _Roughness);
@@ -113,17 +107,19 @@ Shader "Unlit/Custom PBR Shader"
                     kD *= 1.0 - _Metallic;
 
                     float3 numerator = NDF * G * F;
-                    float denominator = 4.0 * max(dot(N, V), 0.0) * max(dot(N, L), 0.0) + 0.0001;
-                    float3 specular = numerator / denominator;
+                    float denominator = 4.0 * max(dot(N, V), 0.0) * max(dot(N, L), 0.0);
+                    float3 specular = numerator / max(denominator, 0.001);
 
                     // add to outgoing radiance Lo
                     float NdotL = max(dot(N, L), 0.0);
-                    Lo += (kD * _Albedo / UNITY_PI + specular) * radiance * NdotL;
+                    Lo += _LightColor * (kD * pow(_Albedo, 2.2) / UNITY_PI + specular) * NdotL;
                 }
 
                 // sample the texture
                 float4 ambient = 0.03 * _Albedo * _AmbientOcclusion;
                 fixed4 col = ambient + float4(Lo, 1);
+                col = col / (col + 1.0);
+                col = pow(col, 1.0/2.2);
                 // apply fog
                 UNITY_APPLY_FOG(i.fogCoord, col);
                 return col;
@@ -161,10 +157,10 @@ Shader "Unlit/Custom PBR Shader"
 
             float GeometrySmith(float3 N, float3 V, float3 L, float roughness)
             {
-                float NdotV = max(dot(N, V), 0.0);
                 float NdotL = max(dot(N, L), 0.0);
-                float ggx2 = GeometrySchlickGGX(NdotV, roughness);
+                float NdotV = max(dot(N, V), 0.0);
                 float ggx1 = GeometrySchlickGGX(NdotL, roughness);
+                float ggx2 = GeometrySchlickGGX(NdotV, roughness);
 
                 return ggx1 * ggx2;
             }
