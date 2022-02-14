@@ -2,10 +2,16 @@ Shader "Unlit/Custom PBR Shader"
 {
     Properties
     {
+        _AlbedoTex ("Albedo Texture", 2D) = "white" {}
         _Albedo ("Albedo", Color) = (1,1,1,1)
+        _MetallicTex ("Metallic Texture", 2D) = "white" {}
         _Metallic ("Metallic", float) = 0
+        _RoughnessTex ("Roughness Texture", 2D) = "white" {}
         _Roughness ("Roughness", float) = 0
+        _AOTex ("Ambient Occlusion Texture", 2D) = "white" {}
         _AmbientOcclusion ("Ambient Occlusion", float) = 1
+        //_LightPos ("LightDirection", vector) = (0,0,0,0)
+        _LightColor ("LightColor", Color) = (1,1,1,1)
     }
     SubShader
     {
@@ -24,7 +30,7 @@ Shader "Unlit/Custom PBR Shader"
             #pragma multi_compile_fog
 
             #include "UnityCG.cginc"
-            #include "Lighting.cginc"
+            //#include "Lighting.cginc"
 
             struct appdata
             {
@@ -38,12 +44,19 @@ Shader "Unlit/Custom PBR Shader"
                 UNITY_FOG_COORDS(1)
                 float4 vertex : SV_POSITION;
                 float3 normal : TEXCOORD1;
+                float2 uv : TEXCOORD0;
             };
-
+            
+            sampler2D _AlbedoTex;
             float4 _Albedo;
+            sampler2D _MetallicTex;
             float _Metallic;
+            sampler2D _RoughnessTex;
             float _Roughness;
+            sampler2D _AOTex;
             float _AmbientOcclusion;
+            float4 _LightDirection;
+            float4 _LightColor;
 
 
             float DistributionGGX(float3 N, float3 H, float roughness);
@@ -56,6 +69,7 @@ Shader "Unlit/Custom PBR Shader"
                 v2f o;
                 o.vertex = UnityObjectToClipPos(v.vertex);
                 o.normal = v.normal;
+                o.uv = v.uv;
                 UNITY_TRANSFER_FOG(o, o.vertex);
                 return o;
             }
@@ -65,9 +79,13 @@ Shader "Unlit/Custom PBR Shader"
                 /*float3 direction, lightColor;
                 float distAtten, shadowAtten;*/
                 //CalculateMainLight(i.vertex, direction, lightColor, distAtten, shadowAtten);
-                float3 lightDirection = WorldSpaceLightDir(i.vertex);
                 float3 N = normalize(i.normal);
                 float3 V = normalize(_WorldSpaceCameraPos - i.vertex);
+
+                _Albedo *=  tex2D(_AlbedoTex, i.uv);
+                _Metallic *= tex2D(_MetallicTex, i.uv);
+                _Roughness *= tex2D(_RoughnessTex, i.uv);
+                _AmbientOcclusion *= tex2D(_AOTex, i.uv);
 
                 float3 F0 = 0.04;
                 F0 = lerp(F0, _Albedo, _Metallic);
@@ -78,12 +96,12 @@ Shader "Unlit/Custom PBR Shader"
                 {
                     // calculate per-light radiance
                     //float3 L = normalize(lightPositions[index] - i.vertex);
-                    float3 L = normalize(lightDirection);
+                    float3 L = normalize(_LightDirection);
                     float3 H = normalize(V + L);
                     //float distance = length(lightPositions[index] - i.vertex);
-                    float distance = length(lightDirection);
+                    float distance = length(_WorldSpaceLightPos0 - i.vertex);
                     float attenuation = 1.0 / (distance * distance);
-                    float3 radiance = _LightColor0 * attenuation;
+                    float3 radiance = _LightColor * attenuation;
 
                     // cook-torrance brdf
                     float NDF = DistributionGGX(N, H, _Roughness);
